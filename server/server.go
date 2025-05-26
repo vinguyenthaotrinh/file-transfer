@@ -37,7 +37,7 @@ func main() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	buffer := make([]byte, 1024)
+	buffer := make([]byte, 2048)
 	n, _ := conn.Read(buffer)
 	command := strings.TrimSpace(string(buffer[:n]))
 
@@ -46,8 +46,8 @@ func handleConnection(conn net.Conn) {
 	if command == "LIST" {
 		handleList(conn)
 	} else if strings.HasPrefix(command, "GET ") {
-		filename := strings.TrimSpace(strings.TrimPrefix(command, "GET "))
-		handleGet(conn, filename)
+		files := strings.Fields(strings.TrimPrefix(command, "GET "))
+		handleMultiGet(conn, files)
 	} else {
 		conn.Write([]byte("ERR: Unknown command\n"))
 	}
@@ -76,33 +76,34 @@ func handleList(conn net.Conn) {
 	}
 }
 
-func handleGet(conn net.Conn, filename string) {
-	fullPath := SHARE_DIR + "/" + filename
-	file, err := os.Open(fullPath)
-	if err != nil {
-		conn.Write([]byte("ERR: Cannot open file\n"))
-		return
-	}
-	defer file.Close()
-
-	info, _ := file.Stat()
-	filesize := info.Size()
-
-	fmt.Printf("Sending file '%s' (%.2f MB)\n", filename, float64(filesize)/(1024*1024))
-
-	conn.Write([]byte(fmt.Sprintf("SIZE %d\n", filesize)))
-
-	ack := make([]byte, 16)
-	conn.Read(ack)
-
-	buffer := make([]byte, CHUNK_SIZE)
-	for {
-		n, err := file.Read(buffer)
-		if n > 0 {
-			conn.Write(buffer[:n])
-		}
+func handleMultiGet(conn net.Conn, filenames []string) {
+	for idx, name := range filenames {
+		fullPath := SHARE_DIR + "/" + name
+		file, err := os.Open(fullPath)
 		if err != nil {
-			break
+			conn.Write([]byte(fmt.Sprintf("ERR %s\n", name)))
+			continue
 		}
+
+		info, _ := file.Stat()
+		filesize := info.Size()
+
+		fmt.Printf("Sending %s part %d (%.2f MB)\n", name, idx+1, float64(filesize)/(1024*1024))
+		conn.Write([]byte(fmt.Sprintf("FILE %s %d\n", name, filesize)))
+
+		ack := make([]byte, 16)
+		conn.Read(ack)
+
+		buffer := make([]byte, CHUNK_SIZE)
+		for {
+			n, err := file.Read(buffer)
+			if n > 0 {
+				conn.Write(buffer[:n])
+			}
+			if err != nil {
+				break
+			}
+		}
+		file.Close()
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
@@ -16,7 +17,7 @@ func main() {
 	for {
 		fmt.Println("\n--- MENU ---")
 		fmt.Println("1. List files")
-		fmt.Println("2. Download file")
+		fmt.Println("2. Download file(s)")
 		fmt.Println("0. Exit")
 		fmt.Print("Choose: ")
 
@@ -27,10 +28,14 @@ func main() {
 		case 1:
 			listFiles()
 		case 2:
-			fmt.Print("Enter filename to download: ")
-			var filename string
-			fmt.Scanln(&filename)
-			downloadFile(filename)
+			fmt.Print("Enter filenames (space-separated): ")
+			var input string
+			scanner := bufio.NewScanner(os.Stdin)
+			if scanner.Scan() {
+				input = scanner.Text()
+			}
+			files := strings.Fields(input)
+			downloadFiles(files)
 		case 0:
 			return
 		default:
@@ -60,7 +65,7 @@ func listFiles() {
 	fmt.Println(string(buffer[:n]))
 }
 
-func downloadFile(filename string) {
+func downloadFiles(filenames []string) {
 	conn, err := net.Dial("tcp", SERVER_ADDR)
 	if err != nil {
 		fmt.Println("Connection failed:", err)
@@ -68,48 +73,52 @@ func downloadFile(filename string) {
 	}
 	defer conn.Close()
 
-	conn.Write([]byte("GET " + filename + "\n"))
+	conn.Write([]byte("GET " + strings.Join(filenames, " ") + "\n"))
 
-	buf := make([]byte, 64)
-	n, err := conn.Read(buf)
-	if err != nil {
-		fmt.Println("Error reading SIZE:", err)
-		return
-	}
-
-	header := string(buf[:n])
-	if strings.HasPrefix(header, "ERR") {
-		fmt.Println(header)
-		return
-	}
-
-	var filesize int64
-	fmt.Sscanf(header, "SIZE %d", &filesize)
-
-	conn.Write([]byte("READY"))
-
-	out, err := os.Create(filename)
-	if err != nil {
-		fmt.Println("Failed to create file:", err)
-		return
-	}
-	defer out.Close()
-
-	received := int64(0)
-	buffer := make([]byte, CHUNK_SIZE)
-
-	for received < filesize {
-		n, err := conn.Read(buffer)
+	for i, name := range filenames {
+		// Nhận dòng FILE <name> <size>
+		headerBuf := make([]byte, 128)
+		n, err := conn.Read(headerBuf)
 		if err != nil {
-			fmt.Println("\nError during download:", err)
+			fmt.Println("\nError receiving header:", err)
 			return
 		}
-		out.Write(buffer[:n])
-		received += int64(n)
 
-		percent := float64(received) / float64(filesize) * 100
-		fmt.Printf("\rDownloading %s ... %.0f%%", filename, percent)
+		header := string(headerBuf[:n])
+		if strings.HasPrefix(header, "ERR") {
+			fmt.Printf("Server error: cannot send %s\n", name)
+			continue
+		}
+
+		var filename string
+		var filesize int64
+		fmt.Sscanf(header, "FILE %s %d", &filename, &filesize)
+
+		conn.Write([]byte("READY"))
+
+		out, err := os.Create(filename)
+		if err != nil {
+			fmt.Println("Failed to create file:", filename)
+			continue
+		}
+		defer out.Close()
+
+		received := int64(0)
+		buffer := make([]byte, CHUNK_SIZE)
+
+		part := i + 1
+		for received < filesize {
+			n, err := conn.Read(buffer)
+			if err != nil {
+				fmt.Printf("\nError downloading %s\n", filename)
+				break
+			}
+			out.Write(buffer[:n])
+			received += int64(n)
+
+			percent := float64(received) / float64(filesize) * 100
+			fmt.Printf("\rDownloading %s part %d ... %.0f%%", filename, part, percent)
+		}
+		fmt.Printf("\nDownload of %s complete. Saved at: %s\n", filename, filename)
 	}
-	fmt.Println("\nDownload complete.")
-	fmt.Printf("File saved at: %s\n", filename)
 }
