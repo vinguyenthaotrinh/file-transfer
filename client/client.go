@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	SERVER_ADDR  = "localhost:9000"
+	SERVER_ADDR  = "127.0.0.1:9000"
 	CHUNK_SIZE   = 1024 * 1024
 	RECEIVED_DIR = "./received"
 )
@@ -96,12 +96,15 @@ func downloadFiles(filenames []string) {
 		fmt.Sscanf(header, "FILE %s %d", &filename, &filesize)
 
 		// Nếu file đã tồn tại, hỏi người dùng
-		if _, err := os.Stat(filename); err == nil {
+		os.MkdirAll(RECEIVED_DIR, os.ModePerm)
+		filepath := RECEIVED_DIR + "/" + filename
+
+		if _, err := os.Stat(filepath); err == nil {
 			fmt.Printf("File %s already exists. Overwrite? (y/n): ", filename)
 			var ans string
 			fmt.Scanln(&ans)
 			if strings.ToLower(ans) != "y" {
-				fmt.Printf("Skipped %s\n", filename)
+				fmt.Printf("Skipped %s\n", filepath)
 				conn.Write([]byte("SKIP"))
 				continue
 			}
@@ -109,10 +112,7 @@ func downloadFiles(filenames []string) {
 
 		conn.Write([]byte("READY"))
 
-		os.MkdirAll(RECEIVED_DIR, os.ModePerm)
-		filepath := RECEIVED_DIR + "/" + filename
 		out, err := os.Create(filepath)
-
 		if err != nil {
 			fmt.Println("Failed to create file:", filename)
 			continue
@@ -124,7 +124,7 @@ func downloadFiles(filenames []string) {
 		buffer := make([]byte, CHUNK_SIZE)
 
 		totalParts := (filesize + CHUNK_SIZE - 1) / CHUNK_SIZE
-		partNum := 1
+		partNum := int64(1)
 
 		for received < filesize {
 			n, err := conn.Read(buffer)
@@ -136,9 +136,10 @@ func downloadFiles(filenames []string) {
 			received += int64(n)
 
 			percent := float64(received) / float64(filesize) * 100
-			fmt.Printf("\rDownloading %s part %d/%d .... %.0f%%\n", filename, partNum, totalParts, percent)
+			fmt.Printf("\rDownloading %s part %d/%d ..... %.0f%%\n", filename, partNum, totalParts, percent)
 
-			partNum = partNum + n/CHUNK_SIZE
+			partNum = (received / CHUNK_SIZE) + 1
+			partNum = min(partNum, totalParts)
 		}
 		duration := time.Since(start).Seconds()
 		speed := float64(received) / (1024 * 1024) / duration

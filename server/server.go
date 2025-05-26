@@ -8,20 +8,21 @@ import (
 )
 
 const (
-	PORT       = ":9000"
+	HOST       = "127.0.0.1"
+	PORT       = "9000"
 	CHUNK_SIZE = 1024 * 1024
 	SHARED_DIR = "./shared"
 )
 
 func main() {
-	listener, err := net.Listen("tcp", PORT)
+	listener, err := net.Listen("tcp", HOST+":"+PORT)
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 		return
 	}
 	defer listener.Close()
 
-	fmt.Println("Server is listening on", PORT)
+	fmt.Println("Server is listening on port", PORT)
 
 	for {
 		conn, err := listener.Accept()
