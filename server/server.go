@@ -10,7 +10,7 @@ import (
 const (
 	PORT       = ":9000"
 	CHUNK_SIZE = 1024 * 1024
-	SHARE_DIR  = "./shared"
+	SHARED_DIR = "./shared"
 )
 
 func main() {
@@ -56,7 +56,7 @@ func handleConnection(conn net.Conn) {
 func handleList(conn net.Conn) {
 	fmt.Println("Sending file list to client...")
 
-	files, err := os.ReadDir(SHARE_DIR)
+	files, err := os.ReadDir(SHARED_DIR)
 	if err != nil {
 		conn.Write([]byte("ERR: Cannot read directory\n"))
 		return
@@ -77,8 +77,8 @@ func handleList(conn net.Conn) {
 }
 
 func handleMultiGet(conn net.Conn, filenames []string) {
-	for idx, name := range filenames {
-		fullPath := SHARE_DIR + "/" + name
+	for _, name := range filenames {
+		fullPath := SHARED_DIR + "/" + name
 		file, err := os.Open(fullPath)
 		if err != nil {
 			conn.Write([]byte(fmt.Sprintf("ERR %s\n", name)))
@@ -88,11 +88,16 @@ func handleMultiGet(conn net.Conn, filenames []string) {
 		info, _ := file.Stat()
 		filesize := info.Size()
 
-		fmt.Printf("Sending %s part %d (%.2f MB)\n", name, idx+1, float64(filesize)/(1024*1024))
+		fmt.Printf("Sending file %s (%.2f MB)\n", name, float64(filesize)/(1024*1024))
 		conn.Write([]byte(fmt.Sprintf("FILE %s %d\n", name, filesize)))
 
 		ack := make([]byte, 16)
 		conn.Read(ack)
+		if strings.TrimSpace(string(ack)) == "SKIP" {
+			fmt.Printf("Client skipped %s\n", name)
+			file.Close()
+			continue
+		}
 
 		buffer := make([]byte, CHUNK_SIZE)
 		for {

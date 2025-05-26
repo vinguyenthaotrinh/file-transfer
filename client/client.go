@@ -6,20 +6,22 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 const (
-	SERVER_ADDR = "localhost:9000"
-	CHUNK_SIZE  = 1024 * 1024
+	SERVER_ADDR  = "localhost:9000"
+	CHUNK_SIZE   = 1024 * 1024
+	RECEIVED_DIR = "./received"
 )
 
 func main() {
 	for {
-		fmt.Println("\n--- MENU ---")
+		fmt.Println("\nChoose an option:")
 		fmt.Println("1. List files")
 		fmt.Println("2. Download file(s)")
 		fmt.Println("0. Exit")
-		fmt.Print("Choose: ")
+		fmt.Print("Enter a number (0-2): ")
 
 		var choice int
 		fmt.Scanln(&choice)
@@ -39,7 +41,7 @@ func main() {
 		case 0:
 			return
 		default:
-			fmt.Println("Invalid choice.")
+			fmt.Println("\nInvalid choice.")
 		}
 	}
 }
@@ -75,15 +77,14 @@ func downloadFiles(filenames []string) {
 
 	conn.Write([]byte("GET " + strings.Join(filenames, " ") + "\n"))
 
-	for i, name := range filenames {
-		// Nhận dòng FILE <name> <size>
+	for _, name := range filenames {
+		// Nhận header: FILE <filename> <size>
 		headerBuf := make([]byte, 128)
 		n, err := conn.Read(headerBuf)
 		if err != nil {
-			fmt.Println("\nError receiving header:", err)
+			fmt.Println("Error receiving header:", err)
 			return
 		}
-
 		header := string(headerBuf[:n])
 		if strings.HasPrefix(header, "ERR") {
 			fmt.Printf("Server error: cannot send %s\n", name)
@@ -94,19 +95,37 @@ func downloadFiles(filenames []string) {
 		var filesize int64
 		fmt.Sscanf(header, "FILE %s %d", &filename, &filesize)
 
+		// Nếu file đã tồn tại, hỏi người dùng
+		if _, err := os.Stat(filename); err == nil {
+			fmt.Printf("File %s already exists. Overwrite? (y/n): ", filename)
+			var ans string
+			fmt.Scanln(&ans)
+			if strings.ToLower(ans) != "y" {
+				fmt.Printf("Skipped %s\n", filename)
+				conn.Write([]byte("SKIP"))
+				continue
+			}
+		}
+
 		conn.Write([]byte("READY"))
 
-		out, err := os.Create(filename)
+		os.MkdirAll(RECEIVED_DIR, os.ModePerm)
+		filepath := RECEIVED_DIR + "/" + filename
+		out, err := os.Create(filepath)
+
 		if err != nil {
 			fmt.Println("Failed to create file:", filename)
 			continue
 		}
 		defer out.Close()
 
+		start := time.Now()
 		received := int64(0)
 		buffer := make([]byte, CHUNK_SIZE)
 
-		part := i + 1
+		totalParts := (filesize + CHUNK_SIZE - 1) / CHUNK_SIZE
+		partNum := 1
+
 		for received < filesize {
 			n, err := conn.Read(buffer)
 			if err != nil {
@@ -117,8 +136,14 @@ func downloadFiles(filenames []string) {
 			received += int64(n)
 
 			percent := float64(received) / float64(filesize) * 100
-			fmt.Printf("\rDownloading %s part %d ... %.0f%%", filename, part, percent)
+			fmt.Printf("\rDownloading %s part %d/%d .... %.0f%%\n", filename, partNum, totalParts, percent)
+
+			partNum = partNum + n/CHUNK_SIZE
 		}
-		fmt.Printf("\nDownload of %s complete. Saved at: %s\n", filename, filename)
+		duration := time.Since(start).Seconds()
+		speed := float64(received) / (1024 * 1024) / duration
+
+		fmt.Printf("Time: %.2fs | Speed: %.2f MB/s\n\n", duration, speed)
 	}
+	fmt.Printf("File saved at: %s\n", RECEIVED_DIR)
 }
