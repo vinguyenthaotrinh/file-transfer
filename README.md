@@ -144,10 +144,10 @@ go run client.go
 
 ```bash
 # Terminal 1 - Run Server
-cd server
+cd release
 server.exe
 
 # Terminal 2 - Run Client
-cd client
+cd release
 client.exe
 ```
