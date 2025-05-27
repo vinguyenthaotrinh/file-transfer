@@ -145,9 +145,9 @@ go run client.go
 ```bash
 # Terminal 1 - Run Server
 cd release
-server.exe
+.\server.exe
 
 # Terminal 2 - Run Client
 cd release
-client.exe
+.\client.exe
 ```
