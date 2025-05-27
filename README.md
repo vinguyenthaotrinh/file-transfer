@@ -95,7 +95,7 @@ File saved at: ./received
 ### Server Console
 
 ```bash
-Server is listening on :9000
+Server is listening on port 9000
 New connection from 127.0.0.1:54321
 Received command: GET 5MB.zip
 Sending 5MB.zip (5.00 MB)
@@ -128,6 +128,8 @@ Estimated completeness: **100%**
 
 ## 8. How to Run
 
+### Using Go
+
 ```bash
 # Terminal 1 - Run Server
 cd server
@@ -138,4 +140,14 @@ cd client
 go run client.go
 ```
 
-> Make sure `server/shared/` has some files before testing.
+### Using Executable Files
+
+```bash
+# Terminal 1 - Run Server
+cd server
+server.exe
+
+# Terminal 2 - Run Client
+cd client
+client.exe
+```
